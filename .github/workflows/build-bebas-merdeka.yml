@@ -1,0 +1,250 @@
+name: Build Project merdeka
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Cloud Build Engine
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'gradle'
+
+      # Solusi Otomatis: Membuat ulang wrapper 9.3.1 yang bersih di Cloud
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3.2.0
+        with:
+          log-accepted-android-sdk-licenses: false
+          cmdline-tools-version: '13114758'
+          packages: 'platforms;android-36.1 build-tools;36.1.0 platform-tools'
+
+      - name: Install NDK
+        run: |
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --channel=0 --install "ndk;28.2.13676358"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> $GITHUB_ENV
+
+      - name: Setup Build Essentials
+        run: sudo apt-get update && sudo apt-get install -y build-essential
+
+      # --- BAGIAN OTOMATISASI JAR ---
+      - name: Fix Gradle Wrapper (Otomatis tiap Build)
+        run: |
+          echo "--- Memastikan Gradle Wrapper selalu fresh ---"
+          rm -rf gradle/wrapper/gradle-wrapper.jar
+          # Generate ulang wrapper supaya gak korup
+          gradle wrapper --gradle-version 9.3.1
+      # ------------------------------
+
+
+
+      # ==================================================
+      # BUILD LIBSSH2 + MBEDTLS
+      # ==================================================
+
+      - name: Restore cached libssh2
+        id: cache-libssh2
+        uses: actions/cache/restore@v4
+        with:
+          path: app/src/main/jniLibs
+          key: |
+            libssh2-${{ runner.os }}-${{ hashFiles(
+            'libssh2/**',
+            'mbedtls/**',
+            'app/src/main/cpp/**',
+            'compile-libssh2.sh'
+            ) }}
+
+
+      - name: Build libssh2
+        if: steps.cache-libssh2.outputs.cache-hit != 'true'
+        run: |
+          chmod +x compile-libssh2.sh
+          bash compile-libssh2.sh
+
+
+      - name: Save cached libssh2
+        if: steps.cache-libssh2.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: app/src/main/jniLibs
+          key: |
+            libssh2-${{ runner.os }}-${{ hashFiles(
+            'libssh2/**',
+            'mbedtls/**',
+            'app/src/main/cpp/**',
+            'compile-libssh2.sh'
+            ) }}
+
+
+
+
+      # ==================================================
+      # BUILD HEV SOCKS5 TUNNEL
+      # ==================================================
+
+      - name: Restore cached HEV
+        id: cache-hev
+        uses: actions/cache/restore@v4
+        with:
+          path: app/src/main/jniLibs
+          key: |
+            hevtun-${{ runner.os }}-${{ hashFiles(
+            'hev-socks5-tunnel/**',
+            'compile-hevtun.sh'
+            ) }}
+
+
+      - name: Build HEV SOCKS5 Tunnel
+        if: steps.cache-hev.outputs.cache-hit != 'true'
+        env:
+          NDK_HOME: ${{ env.NDK_HOME }}
+        run: |
+
+          if [ ! -d "hev-socks5-tunnel" ]; then
+            echo "hev-socks5-tunnel tidak ditemukan"
+            exit 1
+          fi
+
+          chmod +x compile-hevtun.sh
+          bash compile-hevtun.sh
+
+
+
+      - name: Save cached HEV
+        if: steps.cache-hev.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: app/src/main/jniLibs
+          key: |
+            hevtun-${{ runner.os }}-${{ hashFiles(
+            'hev-socks5-tunnel/**',
+            'compile-hevtun.sh'
+            ) }}
+
+
+
+
+      # ==================================================
+      # BUILD APK
+      # ==================================================
+
+      - name: Create Dummy API Secrets
+        run: |
+          touch .env
+          echo "MAPS_API_KEY=mock_key" >> .env
+
+
+
+      - name: Decode debug keystore if exists
+        run: |
+          if [ -f "debug.keystore.base64" ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+          else
+            echo "debug.keystore.base64 tidak ditemukan"
+          fi
+
+
+
+      - name: Build Split Debug APKs
+        run: |
+          gradle :app:assembleDebug --stacktrace --no-daemon
+
+
+
+      - name: Build JAR File
+        run: |
+          gradle jar --stacktrace --no-daemon || echo "Skip JAR"
+
+
+
+
+      - name: Sync Libs
+        run: |
+          mkdir -p app/src/main/jniLibs
+          if [ -d "libs" ]; then
+            cp -r libs/* app/src/main/jniLibs/
+          fi
+
+
+      - name: Ensure gradlew is executable
+        run: chmod +x gradlew
+
+      - name: Create Dummy API Secrets
+        run: |
+          touch .env
+          echo "MAPS_API_KEY=mock_key" >> .env
+
+      - name: Decode debug keystore
+        run: base64 -d debug.keystore.base64 > debug.keystore
+
+
+
+      # Proses compile APK (Sesuai workflow yang kamu kirim)
+      - name: Build Split Debug APKs
+        run: ./gradlew :app:assembleDebug --stacktrace --no-daemon
+
+      # Proses compile JAR (Menjaga kalau proyekmu butuh output .jar)
+      - name: Build JAR File
+        run: ./gradlew jar --stacktrace --no-daemon || echo "Bukan proyek JAR, skip langkah ini."
+
+      # ==== UPLOAD ARTIFAK ====
+
+      - name: Upload arm64-v8a APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-arm64-v8a-debug
+          path: app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload armeabi-v7a APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-armeabi-v7a-debug
+          path: app/build/outputs/apk/debug/app-armeabi-v7a-debug.apk
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload x86 APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-x86-debug
+          path: app/build/outputs/apk/debug/app-x86-debug.apk
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload x86_64 APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-x86_64-debug
+          path: app/build/outputs/apk/debug/app-x86_64-debug.apk
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload Universal APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-universal-debug
+          path: app/build/outputs/apk/debug/app-universal-debug.apk
+          if-no-files-found: warn
+          retention-days: 7
+
+      # Otomatis upload file .jar jika proyek kamu menghasilkan file JAR
+      - name: Upload JAR Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: project-jar-outputs
+          path: "**/build/libs/*.jar"
+          if-no-files-found: ignore
+          retention-days: 7

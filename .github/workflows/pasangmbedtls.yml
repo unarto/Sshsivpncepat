@@ -1,0 +1,49 @@
+name: Setup Mbed TLS Submodule
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-submodule:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          submodules: false
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Remove old submodule
+        run: |
+          git submodule deinit -f mbedtls || true
+          git rm -f mbedtls || true
+          rm -rf .git/modules/mbedtls
+          rm -rf mbedtls
+
+      - name: Add Mbed TLS 3.6.7
+        run: |
+          git submodule add https://github.com/Mbed-TLS/mbedtls.git mbedtls
+          cd mbedtls
+          git fetch --tags
+          git checkout mbedtls-3.6.7
+          cd ..
+
+      - name: Commit and Push
+        run: |
+          git add .gitmodules mbedtls
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: add Mbed TLS 3.6.7 submodule"
+            git push origin HEAD
+          else
+            echo "No changes"
+          fi

@@ -1,0 +1,41 @@
+name: Auto Merge Branch to main
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: Branch yang akan di-merge
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch all branches
+        run: git fetch origin
+
+      - name: Merge into main
+        run: |
+          git checkout main
+          git reset --hard origin/main
+
+          git merge origin/${{ inputs.source_branch }} \
+            --no-ff \
+            -X theirs \
+            -m "Auto merge ${{ inputs.source_branch }} into main"
+
+          git push origin main

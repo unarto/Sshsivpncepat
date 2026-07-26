@@ -1,0 +1,45 @@
+name: Hapus Submodule libssh2
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  hapus-libssh2:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Set identity bot
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Hapus submodule libssh2
+        run: |
+          set -euo pipefail
+          target_branch="${GITHUB_REF_NAME}"
+
+          git submodule deinit -f libssh2 || true
+          git rm -rf libssh2 || true
+          rm -rf .git/modules/libssh2 libssh2
+          git config -f .gitmodules --remove-section submodule.libssh2 || true
+          if [ -f .gitmodules ] && [ ! -s .gitmodules ]; then
+            rm .gitmodules
+          fi
+
+          git add -A .gitmodules libssh2 || true
+          if git diff --cached --quiet; then
+            echo "Tidak ada submodule libssh2 yang perlu dihapus."
+            exit 0
+          fi
+
+          git commit -m "🤖 Bot: Hapus submodule libssh2"
+          git push origin "HEAD:${target_branch}"

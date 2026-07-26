@@ -1,0 +1,25 @@
+name: Gemini AI Code Review
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Gemini PR Review
+        uses: kanstren/gemini-review-action@v1
+        with:
+          api_key: ${{ secrets.GEMINI_API_KEY }}
+          model: gemini-2.5-flash

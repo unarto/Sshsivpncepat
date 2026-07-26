@@ -1,0 +1,43 @@
+name: Pasang Submodule libssh2
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  pasang-libssh2:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set identity bot
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Pasang libssh2 sebagai submodule
+        run: |
+          set -euo pipefail
+          target_branch="${GITHUB_REF_NAME}"
+
+          git rm -rf libssh2 || true
+          rm -rf libssh2 .git/modules/libssh2
+          git config -f .gitmodules --remove-section submodule.libssh2 || true
+
+          git submodule add https://github.com/libssh2/libssh2.git libssh2
+          git submodule update --init --recursive libssh2
+
+          git add .gitmodules libssh2
+          if git diff --cached --quiet; then
+            echo "Tidak ada perubahan submodule libssh2."
+            exit 0
+          fi
+
+          git commit -m "🤖 Bot: Pasang submodule libssh2"
+          git push origin "HEAD:${target_branch}"

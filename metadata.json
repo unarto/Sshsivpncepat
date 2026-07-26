@@ -1,0 +1,8 @@
+{
+  "name": "SivpnCepat",
+  "description": "Imported from GitHub: unarto/Sshsivpncepat",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
